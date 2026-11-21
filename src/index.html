@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f8fd">
+  <meta name="description" content="Корпоративный чат в реальном времени на WebSocket">
+  <title>Pulse Chat — Netology WebSockets</title>
+</head>
+<body>
+  <div class="page">
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div class="brand">
+          <img id="brand-logo" class="brand-icon" alt="" width="42" height="42">
+          <div class="brand-title"><strong>Pulse <span>Chat</span></strong><small>Пространство для общения</small></div>
+        </div>
+        <div class="top-actions">
+          <div id="connection-badge" class="status-badge" aria-live="polite"><span class="status-dot"></span><span id="connection-label">Не подключено</span></div>
+          <button id="open-settings" class="icon-button" type="button" aria-label="Настройки подключения" title="Настройки подключения">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8ZM19.4 15a1 1 0 0 0-.2 1.2l.6.8-1.8 1.8-.8-.6a1 1 0 0 0-1.2-.2l-.9.4V20h-2.5v-1.2l-.9-.4a1 1 0 0 0-1.2.2l-.8.6L7 17.4l.6-.8a1 1 0 0 0 .2-1.2l-.4-.9H6v-2.5h1.4l.4-.9a1 1 0 0 0-.2-1.2L7 9.1 8.8 7.3l.8.6a1 1 0 0 0 1.2.2l.9-.4V6h2.5v1.7l.9.4a1 1 0 0 0 1.2-.2l.8-.6 1.8 1.8-.6.8a1 1 0 0 0-.2 1.2l.4.9H20v2.5h-1.4l-.4.9Z" transform="translate(-1 -1)"/></svg>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <section class="heading-row">
+        <div><div class="eyebrow">В РЕАЛЬНОМ ВРЕМЕНИ</div><h1>Командный чат</h1><p>Общайтесь с коллегами, оставаясь на связи.</p></div>
+        <div class="online-pill"><span class="online-icon">●</span> <span id="online-count">0</span> <span id="participants-label">участников онлайн</span></div>
+      </section>
+
+      <div class="chat-shell">
+        <aside class="sidebar" aria-label="Участники">
+          <div class="sidebar-top"><div><h2>Участники</h2><p>Сейчас в чате</p></div><span id="user-total" class="count-chip">0</span></div>
+          <div id="members" class="members" aria-live="polite"><p class="members-empty">Участники появятся после подключения.</p></div>
+          <div class="sidebar-foot"><div class="circle-circle">✦</div><div>Сообщения доставляются<br>в реальном времени</div></div>
+        </aside>
+
+        <section class="chat-area" aria-label="Общий чат">
+          <div class="chat-header">
+            <div class="chat-room-icon">#</div>
+            <div class="room-label"><h2>Общий чат</h2><p>Все сообщения видны участникам</p></div>
+            <div class="room-header-right"><span class="room-live"></span> LIVE</div>
+          </div>
+          <div id="message-feed" class="feed" role="log" aria-live="polite" aria-relevant="additions">
+            <div id="empty-state" class="empty-state">
+              <img id="empty-art" width="180" height="122" alt="">
+              <h3>Начните разговор</h3><p>Напишите первое сообщение — его сразу увидят остальные участники.</p>
+            </div>
+          </div>
+          <div id="chat-error" class="chat-error" role="alert" hidden></div>
+          <form id="message-form" class="composer">
+            <label class="sr-only" for="message-input">Сообщение</label>
+            <input id="message-input" type="text" maxlength="2000" placeholder="Напишите сообщение..." autocomplete="off" disabled>
+            <button id="send-message" class="send-button" type="submit" disabled aria-label="Отправить сообщение">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 12 16-8-5 16-3.5-6.5L4 12Zm7.5 1.5L20 4"/></svg>
+            </button>
+            <div class="send-hint">Enter — отправить</div>
+          </form>
+        </section>
+      </div>
+      <footer class="footer">Учебный проект Нетологии · WebSocket API · <span id="footer-state">Ожидание подключения</span></footer>
+    </main>
+  </div>
+
+  <div id="join-overlay" class="overlay" aria-hidden="false">
+    <div class="dialog-card join-card" role="dialog" aria-modal="true" aria-labelledby="join-title">
+      <div class="dialog-symbol">💬</div>
+      <div class="dialog-eyebrow">ДОБРО ПОЖАЛОВАТЬ</div>
+      <h2 id="join-title">Как вас зовут?</h2>
+      <p>Выберите никнейм, под которым вас будут видеть другие участники чата.</p>
+      <form id="join-form" novalidate>
+        <label for="nickname-input">Ваш никнейм</label>
+        <input id="nickname-input" type="text" minlength="2" maxlength="24" placeholder="Например, Alex" autocomplete="nickname" required autofocus>
+        <div id="join-error" class="form-error" role="alert" aria-live="assertive"></div>
+        <button id="join-button" type="submit" class="primary-button">Войти в чат <span aria-hidden="true">→</span></button>
+      </form>
+      <button id="join-config" class="subtle-link" type="button">Настроить подключение к серверу</button>
+    </div>
+  </div>
+
+  <div id="settings-overlay" class="overlay" aria-hidden="true" hidden>
+    <div class="dialog-card settings-card" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <button id="close-settings" class="dialog-close" type="button" aria-label="Закрыть">×</button>
+      <div class="dialog-eyebrow">НАСТРОЙКИ СЕТИ</div>
+      <h2 id="settings-title">Подключение</h2>
+      <p>Укажите адрес WebSocket-сервера. Для GitHub Pages нужен защищённый адрес <code>wss://</code>.</p>
+      <form id="settings-form">
+        <label for="server-url">Адрес WebSocket</label>
+        <input id="server-url" type="url" placeholder="wss://YOUR-SERVICE.onrender.com/ws" spellcheck="false" autocomplete="url" required>
+        <div id="settings-error" class="form-error" role="alert"></div>
+        <button type="submit" class="primary-button">Сохранить и подключиться</button>
+      </form>
+      <p class="settings-help">Локально: <code>ws://127.0.0.1:7071/ws</code></p>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,27 @@
+{
+  "name": "netology-websocket-chat",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Netology AHJ · EventSource, WebSockets · Chat",
+  "scripts": {
+    "start": "webpack serve --mode development",
+    "build": "webpack --mode production",
+    "server": "node backend/server.cjs",
+    "check": "node --check src/app.js && node --check backend/server.cjs && node --check webpack.config.cjs"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "css-loader": "^7.1.2",
+    "html-webpack-plugin": "^5.6.3",
+    "mini-css-extract-plugin": "^2.9.4",
+    "style-loader": "^4.0.0",
+    "webpack": "^5.99.9",
+    "webpack-cli": "^6.0.1",
+    "webpack-dev-server": "^5.2.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
