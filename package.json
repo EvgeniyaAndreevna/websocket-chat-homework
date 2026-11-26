@@ -2,6 +2,7 @@
   "name": "netology-websocket-chat",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "description": "Netology AHJ · EventSource, WebSockets · Chat",
   "scripts": {
     "start": "webpack serve --mode development",

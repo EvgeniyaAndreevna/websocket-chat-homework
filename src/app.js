@@ -19,10 +19,11 @@ const CONFIGURED_URL = process.env.WS_URL;
 const DEFAULT_LOCAL_URL = 'ws://127.0.0.1:7071/ws';
 const isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname);
 const STORAGE_KEY = 'netology_websocket_chat_url';
+const REGISTRATION_TIMEOUT = 10_000;
 const state = {
   url: localStorage.getItem(STORAGE_KEY) || CONFIGURED_URL || (isLocal ? DEFAULT_LOCAL_URL : ''),
-  socket: null, user: null, pendingName: '', reconnectTimer: null, reconnecting: false,
-  attempt: 0, closedIntentionally: false, messages: 0,
+  socket: null, user: null, pendingName: '', reconnectTimer: null, registrationTimer: null,
+  attempt: 0, closedIntentionally: false,
 };
 
 function showOverlay(element, shouldShow) {
@@ -48,6 +49,40 @@ function hint(message) {
   refs.joinError.textContent = message || '';
   refs.joinButton.disabled = false;
   refs.joinButton.textContent = 'Войти в чат →';
+}
+
+function clearRegistrationTimer() {
+  if (state.registrationTimer !== null) clearTimeout(state.registrationTimer);
+  state.registrationTimer = null;
+}
+
+function clearReconnectTimer() {
+  if (state.reconnectTimer !== null) clearTimeout(state.reconnectTimer);
+  state.reconnectTimer = null;
+}
+
+function failRegistration(message) {
+  clearRegistrationTimer();
+  clearReconnectTimer();
+  // Detach the old socket before closing it, so late replies cannot log us in.
+  const socket = state.socket;
+  state.socket = null;
+  if (socket) socket.close();
+  state.user = null;
+  state.pendingName = '';
+  state.attempt = 0;
+  updateUsers([]);
+  setStatus('disconnected', 'Вход не выполнен');
+  showOverlay(refs.joinOverlay, true);
+  hint(message);
+  refs.nickname.focus();
+}
+
+function isValidUser(user) {
+  return Boolean(user && typeof user === 'object' && !Array.isArray(user)
+    && typeof user.name === 'string' && user.name.trim().length > 0
+    && ((typeof user.id === 'string' && user.id.trim().length > 0)
+      || Number.isFinite(user.id)));
 }
 
 function getValidUrl(value) {
@@ -141,16 +176,20 @@ function appendMessage(messageData) {
   content.append(meta, bubble);
   row.append(avatar, content);
   appendFeed(row);
-  state.messages += 1;
 }
 
 function handleData(data) {
   if (!data || typeof data !== 'object') return;
   switch (data.type) {
     case 'registered': {
+      if (state.registrationTimer === null || state.user) break;
+      if (!isValidUser(data.user)) {
+        failRegistration('Сервер вернул некорректные данные пользователя. Попробуйте снова.');
+        break;
+      }
+      clearRegistrationTimer();
       state.user = data.user;
       state.pendingName = data.user.name;
-      state.reconnecting = false;
       hint('');
       setStatus('connected', 'В сети');
       showOverlay(refs.joinOverlay, false);
@@ -159,9 +198,10 @@ function handleData(data) {
       break;
     }
     case 'name_taken': {
+      if (state.registrationTimer === null || state.user) break;
+      clearRegistrationTimer();
       state.user = null;
       state.pendingName = '';
-      state.reconnecting = false;
       showOverlay(refs.joinOverlay, true);
       hint(data.message || 'Этот никнейм занят. Выберите другой.');
       setStatus('disconnected', 'Выберите другой никнейм');
@@ -172,7 +212,7 @@ function handleData(data) {
     case 'send': appendMessage(data); break;
     case 'notice': addNotice(data.message || ''); break;
     case 'error': {
-      if (!state.user) hint(data.message || 'Не удалось войти в чат.');
+      if (!state.user) failRegistration(data.message || 'Не удалось войти в чат.');
       else errorMessage(data.message || 'Ошибка сервера.');
       break;
     }
@@ -192,7 +232,7 @@ function connect() {
     if (state.socket.readyState === WebSocket.OPEN) submitRegistration();
     return;
   }
-  if (state.reconnectTimer) clearTimeout(state.reconnectTimer);
+  clearReconnectTimer();
   state.closedIntentionally = false;
   setStatus('connecting', 'Подключаемся...');
   hint('');
@@ -200,11 +240,15 @@ function connect() {
   refs.joinButton.textContent = 'Подключаемся...';
   let socket;
   try { socket = new WebSocket(url); }
-  catch { hint('Не удалось создать WebSocket. Проверьте адрес сервера.'); return; }
+  catch { failRegistration('Не удалось создать WebSocket. Проверьте адрес сервера.'); return; }
   state.socket = socket;
+  state.registrationTimer = setTimeout(() => {
+    if (state.socket === socket) failRegistration('Сервер не установил соединение. Попробуйте снова.');
+  }, REGISTRATION_TIMEOUT);
 
   socket.addEventListener('open', () => {
     if (state.socket !== socket) return;
+    clearRegistrationTimer();
     state.attempt = 0;
     setStatus('connecting', 'Соединение установлено');
     submitRegistration();
@@ -212,13 +256,17 @@ function connect() {
   socket.addEventListener('message', (event) => {
     if (state.socket !== socket) return;
     try { handleData(JSON.parse(event.data)); }
-    catch { errorMessage('Получен некорректный ответ сервера.'); }
+    catch {
+      if (!state.user) failRegistration('Получен некорректный ответ сервера. Попробуйте снова.');
+      else errorMessage('Получен некорректный ответ сервера.');
+    }
   });
   socket.addEventListener('error', () => {
     if (state.socket === socket) setStatus('disconnected', 'Ошибка соединения');
   });
   socket.addEventListener('close', () => {
     if (state.socket !== socket) return;
+    clearRegistrationTimer();
     state.socket = null;
     if (state.closedIntentionally) return;
     setStatus('disconnected', 'Связь потеряна');
@@ -226,13 +274,16 @@ function connect() {
     refs.joinButton.textContent = 'Войти в чат →';
     if (state.user) {
       addNotice('Соединение прервано. Пробуем подключиться снова…');
-      state.reconnecting = true;
       state.pendingName = state.user.name;
       state.user = null;
     }
     if (state.pendingName) {
       state.attempt++;
-      state.reconnectTimer = setTimeout(() => connect(), Math.min(3000 * state.attempt, 15000));
+      clearReconnectTimer();
+      state.reconnectTimer = setTimeout(() => {
+        state.reconnectTimer = null;
+        connect();
+      }, Math.min(3000 * state.attempt, 15000));
     } else {
       showOverlay(refs.joinOverlay, true);
       hint('Не удалось подключиться. Проверьте сервер и попробуйте снова.');
@@ -241,16 +292,24 @@ function connect() {
 }
 
 function submitRegistration() {
-  if (!state.socket || state.socket.readyState !== WebSocket.OPEN) return;
+  if (!state.socket || state.socket.readyState !== WebSocket.OPEN
+    || state.registrationTimer !== null || state.user) return;
   const name = state.pendingName.trim();
   if (name.length < 2 || name.length > 24) { hint('Никнейм должен содержать от 2 до 24 символов.'); return; }
-  state.socket.send(JSON.stringify({ type: 'register', name }));
+  clearReconnectTimer();
+  const socket = state.socket;
   refs.joinButton.disabled = true;
   refs.joinButton.textContent = 'Проверяем никнейм...';
+  state.registrationTimer = setTimeout(() => {
+    if (state.socket === socket) failRegistration('Сервер не ответил на запрос входа. Попробуйте снова.');
+  }, REGISTRATION_TIMEOUT);
+  try { socket.send(JSON.stringify({ type: 'register', name })); }
+  catch { failRegistration('Не удалось отправить запрос входа. Попробуйте снова.'); }
 }
 
 refs.joinForm.addEventListener('submit', (event) => {
   event.preventDefault();
+  if (state.registrationTimer !== null || state.user) return;
   const name = refs.nickname.value.trim();
   if (name.length < 2 || name.length > 24) { hint('Введите от 2 до 24 символов.'); return; }
   state.pendingName = name;
@@ -305,12 +364,18 @@ refs.settingsForm.addEventListener('submit', (event) => {
   state.url = url;
   localStorage.setItem(STORAGE_KEY, url);
   state.closedIntentionally = true;
-  if (state.reconnectTimer) clearTimeout(state.reconnectTimer);
-  if (state.socket) state.socket.close();
+  clearRegistrationTimer();
+  clearReconnectTimer();
+  const socket = state.socket;
   state.socket = null;
+  if (socket) socket.close();
   state.user = null;
   state.pendingName = '';
-  state.reconnecting = false;
+  state.attempt = 0;
+  refs.feed.replaceChildren(refs.empty);
+  refs.feed.scrollTop = 0;
+  refs.messageInput.value = '';
+  errorMessage('');
   refs.nickname.value = '';
   refs.joinButton.disabled = false;
   refs.joinButton.textContent = 'Войти в чат →';
@@ -327,5 +392,7 @@ updateUsers([]);
 refs.nickname.focus();
 window.addEventListener('beforeunload', () => {
   state.closedIntentionally = true;
+  clearRegistrationTimer();
+  clearReconnectTimer();
   if (state.socket) state.socket.close();
 });
