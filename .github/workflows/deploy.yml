@@ -7,19 +7,15 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
+  pages: read
 
 concurrency:
   group: github-pages
   cancel-in-progress: true
 
 jobs:
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -36,18 +32,27 @@ jobs:
         run: npm run build
         env:
           WS_URL: ${{ vars.WS_URL }}
-      # Pages must be enabled manually: Settings > Pages > Source > GitHub Actions.
       - name: Configure Pages
-        id: pages
         uses: actions/configure-pages@v6
-      - name: Explain Pages configuration failure
-        if: failure() && steps.pages.outcome == 'failure'
-        run: |
-          echo "::error::Check repository Settings > Pages > Build and deployment > Source: GitHub Actions. Pages must be enabled before deployment."
       - name: Upload website
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
+          name: github-pages
           path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - name: Deploy
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
+        with:
+          artifact_name: github-pages
